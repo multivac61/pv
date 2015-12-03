@@ -16,9 +16,9 @@ class PhaseVocoder(object):
 		super(PhaseVocoder, self).__init__()
 		self.N	    = N		# FFT size
 		self.M 	    = M		# Window size
-		self.Rs 	= Rs
+		self.Rs 	= Rs 	# Synthesis hop size
 		self.alpha  = alpha	# Timestretch factor
-		self.w      = w
+		self.w      = w 	# Analysis/Synthesis window
 
 	def read_wav(self, filename):
 		"""
@@ -38,23 +38,6 @@ class PhaseVocoder(object):
 		filename: name of output .wav file, fs: samling frequency, x: input signal
 		"""
 		wavfile.write(filename, fs,  np.array( x , dtype='int16'))
-
-	def sin_signal(self, fs, T, f0):
-		"""
-		Generate a sinusoidal signal
-		fs: sampling frequency, T: signal duration, f0: signal frequency
-		returns: sinusoid of frequency f0 and length T*fs
-		""" 
-		t  = np.linspace(0, T, T*fs, endpoint=False)
-		return 2**(16-2)*np.sin(2*np.pi * f0 * t)
-
-	def ramp_signal(self, fs, T):
-		"""
-		Generate a ramp signal
-		fs: sampling frequency, T: signal duration, f0: signal frequency
-		returns: ramp of length T*fs
-		""" 
-		return 2**(16-2) * np.linspace(0, T, T*fs, endpoint=False) / (T*fs)
 
 	def speedx(self, sound_array, factor):
 	    """ Multiplies the sound's speed by some `factor` """
@@ -120,11 +103,9 @@ class PhaseVocoder(object):
 		i = 0
 		while p <= pend:
 			i += 1
-			print "x.size: ", x.size,  "y.size: ", y.size
-			print "ap: ", p, "\t", "sy: ", pp, "\ti:", i, int((x.size-N)/Ra), int(L/Ra)
 			# Spectra of two consecutive windows
-			Xs =  np.fft.fft(w*x[p:p+N])
-			Xt =  np.fft.fft(w*x[p+Rs:p+Rs+N])
+			Xs = np.fft.fft(w*x[p:p+N])
+			Xt = np.fft.fft(w*x[p+Rs:p+Rs+N])
 
 			# Prohibit dividing by zero
 			Xs[Xs == 0] = epsilon
@@ -144,43 +125,44 @@ class PhaseVocoder(object):
 			p = int(p+Ra)		# analysis hop
 			pp += Rs			# synthesis hop
 
-			#sys.stdout.write ("Percentage finishied: %d %% \r" % int(100.0*p/pend))
-			#sys.stdout.flush()
+			sys.stdout.write ("Percentage finishied: %d %% \r" % int(100.0*p/pend))
+			sys.stdout.flush()
 
-		print "\n"
-		print "x/Ra; ", (x.size-N+Rs)/Ra, "\tx/Rs; ", (x.size-N+Rs)/Rs
 		y = y / wscale
 
-		print "N: ", N, "\tRa: ", Ra, "\tRs: ", Rs
-		print "x.size: ", x.size, "\ty.size", y.size
-
-		print hM1, np.argmax(w)
-		# plot the signals
 
 		if self.alpha == 1.0:
 			# retrieve input signal perfectly
-			#x = np.delete(x, range(N+Rs))
+			x = np.delete(x, range(N+Rs))
 			x = np.delete(x, range(x.size-(N+Rs), x.size))
 						
 			y = np.delete(y, range(N))
 			y = np.delete(y, range(y.size-(N+2*Rs), y.size))
-			#print np.allclose(x,y)
-						
 		else:
+			# retrieve input signal perfectly
+			x = np.delete(x, range(Rs))
+
 			y = np.delete(y, range(Rs))
 			y = np.delete(y, range(L0, y.size))
-			#x = np.delete(x, range(Rs))
-			#x = np.delete(x, range(x.size-Rs, x.size))
 							
 		return y
 
-	def pitch_shift(self, fs, x, alpha):
-		"""
-		Perform pitch shift of a factor alpha to signal x
-		fs: sampling frequency, x: input signal, alpha: timestrech factor
-		returns: a signal of same length as input signal but with frequency shifted
-		up/down by *****
-		"""
+def sin_signal(self, fs, T, f0):
+	"""
+	Generate a sinusoidal signal
+	fs: sampling frequency, T: signal duration, f0: signal frequency
+	returns: sinusoid of frequency f0 and length T*fs
+	""" 
+	t  = np.linspace(0, T, T*fs, endpoint=False)
+	return 2**(16-2)*np.sin(2*np.pi * f0 * t)
+
+def ramp_signal(self, fs, T):
+	"""
+	Generate a ramp signal
+	fs: sampling frequency, T: signal duration, f0: signal frequency
+	returns: ramp of length T*fs
+	""" 
+	return 2**(16-2) * np.linspace(0, T, T*fs, endpoint=False) / (T*fs)
 
 if __name__ == '__main__':
 	
@@ -210,8 +192,8 @@ if __name__ == '__main__':
 
 
 		# Test with sinusoid or ramp input signal
-		#x = pv.ramp_signal(fs, 1.0)	# test signal
-		#x = pv.sin_signal(fs, 1.0, fs/float(N) * 4)
+		#x = ramp_signal(fs, 1.0)	# test signal
+		#x = sin_signal(fs, 1.0, fs/float(N) * 4)
 
 		# Timestretch by factor alpha
 		y = pv.timestretch(x, alpha)
