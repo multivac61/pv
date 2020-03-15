@@ -1,5 +1,6 @@
 import argparse
 from sys import float_info
+from math import ceil
 import numpy as np
 from numpy.fft import fft, ifft
 from scipy.io import wavfile
@@ -14,11 +15,12 @@ def stretch(x, alpha, window, num_channels, synthesis_hop_factor):
     returns: ?
     """
 
-    synthesis_hop_size = int(window.size / synthesis_hop_factor)
-    analysis_hop_size = int(synthesis_hop_size / alpha)
+    synthesis_hop_size = ceil(num_channels / synthesis_hop_factor)
+    analysis_hop_size = ceil(synthesis_hop_size / alpha)
 
-    x = np.append(np.zeros(synthesis_hop_size), x)
-    y = np.zeros(int(x.size * alpha + x.size / analysis_hop_size * alpha))
+    # TODO: Should be able to completely reconstruct input signal if alpha == 1
+    x = np.pad(x, (synthesis_hop_size,))
+    y = np.zeros(max(x.size, ceil(x.size * alpha + x.size / analysis_hop_size * alpha)))
 
     ys_old = float_info.epsilon
     analysis_hop = synthesis_hop = 0
@@ -27,19 +29,19 @@ def stretch(x, alpha, window, num_channels, synthesis_hop_factor):
         # Spectra of two consecutive windows
         xs = fft(window * x[analysis_hop:analysis_hop + num_channels])
         xt = fft(window * x[analysis_hop + synthesis_hop_size:analysis_hop + synthesis_hop_size + num_channels])
-        xs[xs == 0] = xt[xt == 0] = float_info.epsilon
 
         # IFFT and overlap and add
         ys = xt * (ys_old / xs) / abs(ys_old / xs)
-        ys[ys == 0] = float_info.epsilon
         ys_old = ys
 
-        y[synthesis_hop:synthesis_hop + num_channels] += window * np.real_if_close(ifft(ys))
+        y_cur = y[synthesis_hop:synthesis_hop + num_channels]
+        y_cur = np.add(y_cur, window * np.real_if_close(ifft(ys)), out=y_cur, casting='unsafe')
 
         analysis_hop += analysis_hop_size
         synthesis_hop += synthesis_hop_size
 
-    return y / sum(i ** 2 for i in window) / synthesis_hop_size  # AM scaling due to window sliding
+    # TODO: AM scaling due to window sliding
+    return y[synthesis_hop_size: ceil(x.size * alpha)]
 
 
 def sin_signal(fs, duration, f0):
@@ -49,6 +51,14 @@ def sin_signal(fs, duration, f0):
     returns: sinusoid of frequency f0 and length duration*fs
     """
     return np.sin(2 * np.pi * f0 * np.linspace(0, duration, int(duration * fs), endpoint=False))
+
+
+def normalize(x):
+    """
+        Normalize signal from (min(x), max(x)) to (-1, 1)
+        see: https://github.com/WeAreROLI/JUCE/blob/master/modules/juce_core/maths/juce_MathsFunctions.h#L127
+    """
+    return -1 + 2 * (x - x.min()) / x.ptp()
 
 
 if __name__ == '__main__':
@@ -62,23 +72,24 @@ if __name__ == '__main__':
     parser.add_argument('--test_frequency', type=float, default=440.0, help='Test sin frequency')
     parser.add_argument('--test_sampling_frequency', type=int, default=44100, help='Test sin sampling frequency')
 
-    parser.add_argument('--stretch_factor', type=float, default=1.0, help='Stretch factor')
+    parser.add_argument('--stretch_factor', type=float, default=2, help='Stretch factor')
+    parser.add_argument('--hop_size', type=int, default=1024, help='Synthesis hop size')
+    parser.add_argument('--num_channels', type=int, default=1024, help='Number of channels')
     parser.add_argument('--window', choices=windows.keys(), default='hanning', help='Window function')
-    parser.add_argument('--fft_size', type=int, default=1024, help='Size of FFT')
     parser.add_argument('--window_size', type=int, default=1024, help='Window size')
-    parser.add_argument('--hop_size', type=int, default=1, help='Synthesis hop size')
-    parser.add_argument('--num_channels', type=int, default=1, help='Number of channels')
     parser.add_argument('--synthesis_hop_factor', type=float, default=4, help='Synthesis hop factor')
 
-    parser.add_argument('--generate_figures', type=bool, default=False, help='Should generate figures')
+    parser.add_argument('--generate_figures', action='store_true', help='Should generate figures')
 
     parser.add_argument('--output_filename', type=str, default='output.wav', help='Output filename')
 
     args = parser.parse_args()
 
-    sampling_frequency, input_data = wavfile.read(
+    (sampling_frequency, input_data), _ = wavfile.read(
         args.input_filename) if args.input_filename else args.test_sampling_frequency, sin_signal(
         args.test_sampling_frequency, args.test_duration, args.test_frequency)
+
+    input_data = normalize(input_data)
 
     symmetric_window = windows[args.window](args.window_size) + [0]  # symmetric about (size - 1) / 2
     output_data = stretch(input_data,
@@ -87,7 +98,8 @@ if __name__ == '__main__':
                           args.num_channels,
                           args.synthesis_hop_factor)
 
-    wavfile.write(args.output_filename, sampling_frequency, output_data)
+    output_data = normalize(output_data)
+    wavfile.write(args.output_filename, int(sampling_frequency), output_data)
 
     if args.generate_figures:
         plt.subplot(2, 1, 1)
@@ -97,8 +109,8 @@ if __name__ == '__main__':
         plt.ylabel('Amplitude')
 
         plt.subplot(2, 1, 2)
-        plt.plot(np.arange(output_data.size) / sampling_frequency, input_data)
+        plt.plot(np.arange(output_data.size) / sampling_frequency, output_data)
         plt.title('Output')
-        plt.xlabel('Time')
+        plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         plt.show()
