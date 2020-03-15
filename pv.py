@@ -73,11 +73,10 @@ if __name__ == '__main__':
     parser.add_argument('--test_sampling_frequency', type=int, default=44100, help='Test sin sampling frequency')
 
     parser.add_argument('--stretch_factor', type=float, default=2, help='Stretch factor')
-    parser.add_argument('--hop_size', type=int, default=1024, help='Synthesis hop size')
-    parser.add_argument('--num_channels', type=int, default=1024, help='Number of channels')
+    parser.add_argument('--num_channels', type=int, default=1024, help='Number of FFT channels')
+    parser.add_argument('--synthesis_hop_factor', type=float, default=4, help='Synthesis hop factor')
     parser.add_argument('--window', choices=windows.keys(), default='hanning', help='Window function')
     parser.add_argument('--window_size', type=int, default=1024, help='Window size')
-    parser.add_argument('--synthesis_hop_factor', type=float, default=4, help='Synthesis hop factor')
 
     parser.add_argument('--generate_figures', action='store_true', help='Should generate figures')
 
